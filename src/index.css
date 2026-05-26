@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+    --color-brand-primary: #2d3748;
+    /* Deep Slate */
+    --color-brand-white: #ffffff;
+    /* Pure White */
+    --color-brand-accent: #b7791f;
+    /* Muted Gold */
+    --color-brand-bg: #f7fafc;
+    /* Soft Gray Background */
+    --color-brand-error: #e53e3e;
+    /* Professional Red */
+}
