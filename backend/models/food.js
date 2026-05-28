@@ -3,7 +3,8 @@ import Counter from './counter.js'; // Import the counter model
 
 const foodSchema = new mongoose.Schema({
   itemcode: { type: Number, unique: true }, // Auto-assigned
-  name: { type: String, required: true, trim: true, lowercase: true },
+  nameEnglish: { type: String, required: true, trim: true },
+  nameTamil: { type: String, required: true, trim: true }, // Stored as UTF-8; Tamil Unicode U+0B80–U+0BFF
   price: { type: Number, required: true },
   quantity: { type: String, required: true, lowercase: true },
   category: { 

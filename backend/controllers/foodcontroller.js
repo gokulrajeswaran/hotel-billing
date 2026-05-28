@@ -1,5 +1,24 @@
 import Food from '../models/food.js';
 
+export const translatefood = async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: 'Name is required' });
+  }
+  try {
+    // Google Translate unofficial endpoint — no API key required
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ta&dt=t&q=${encodeURIComponent(name.trim())}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    // Response shape: [ [ ["translated", "original", ...], ... ], ... ]
+    const tamil = data?.[0]?.map(chunk => chunk?.[0]).filter(Boolean).join('').trim();
+    if (!tamil) throw new Error('Empty translation');
+    res.status(200).json({ tamil });
+  } catch (err) {
+    res.status(500).json({ message: 'Translation failed', error: err.message });
+  }
+};
+
 export const getfoods = async (req, res) => {
   try {
     const foods = await Food.find()

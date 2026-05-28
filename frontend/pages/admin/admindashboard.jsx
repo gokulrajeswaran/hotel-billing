@@ -6,10 +6,31 @@ import { HiPlus, HiTrash, HiSave, HiSearch, HiCloudUpload, HiCloudDownload } fro
 import Topbar from './components/topbar';
 import { API_URL } from '../../components/api';
 
+// Noto Sans Tamil font — injected once into the main app
+if (typeof document !== 'undefined' && !document.getElementById('noto-tamil-font')) {
+    const link = document.createElement('link');
+    link.id = 'noto-tamil-font';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;700;900&display=swap';
+    document.head.appendChild(link);
+}
+
 const db = new Dexie('RestaurantPOS_DB');
 db.version(1).stores({
     offlineSales: '++id, billNo, totalAmount, date, status'
 });
+
+// ── Normalize any item shape → always has nameTamil + nameEnglish ────────────
+// Handles: old {name}, new {nameEnglish, nameTamil}, or mixed
+const normalizeItem = (item, foodsLookup = {}) => {
+    // Try to enrich from the live foods list using foodId
+    const liveFood = item.foodId ? foodsLookup[item.foodId] : null;
+    return {
+        ...item,
+        nameEnglish: item.nameEnglish || liveFood?.nameEnglish || item.name || '',
+        nameTamil:   item.nameTamil   || liveFood?.nameTamil   || item.name || '',
+    };
+};
 
 const AdminDashboard = () => {
     const [allFoods, setAllFoods] = useState([]);
@@ -23,15 +44,18 @@ const AdminDashboard = () => {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [pendingSync, setPendingSync] = useState(0);
 
+    // Keep a live id→food map for enriching retrieved bills
+    const [foodsMap, setFoodsMap] = useState({});
+
     useEffect(() => {
         fetchFoods();
-        const handleOnline = () => { setIsOnline(true); syncOfflineData(); };
+        const handleOnline  = () => { setIsOnline(true); syncOfflineData(); };
         const handleOffline = () => { setIsOnline(false); };
-        window.addEventListener('online', handleOnline);
+        window.addEventListener('online',  handleOnline);
         window.addEventListener('offline', handleOffline);
         syncOfflineData();
         return () => {
-            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('online',  handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
@@ -40,22 +64,21 @@ const AdminDashboard = () => {
         try {
             const res = await axios.get(`${API_URL}/api/admin/food`);
             setAllFoods(res.data);
+            // Build id → food map for quick lookup
+            const map = {};
+            res.data.forEach(f => { map[f._id] = f; });
+            setFoodsMap(map);
         } catch (err) {
-            toast.error("Failed to load food items");
+            toast.error('Failed to load food items');
         }
     };
 
     const syncOfflineData = async () => {
-        // 1. Get all pending items from IndexedDB
         const offlineData = await db.offlineSales.toArray();
         setPendingSync(offlineData.length);
-
-        // 2. Only attempt sync if we are online and have data
         if (navigator.onLine && offlineData.length > 0) {
             toast.loading(`Syncing ${offlineData.length} bills...`, { id: 'sync' });
-
             let successCount = 0;
-
             for (const sale of offlineData) {
                 try {
                     const response = await axios.post(`${API_URL}/api/admin/sales/save`, {
@@ -63,22 +86,16 @@ const AdminDashboard = () => {
                         totalAmount: sale.totalAmount,
                         offlineDate: sale.date
                     });
-
-                    // 3. ONLY delete from IndexedDB if the server confirmed receipt
                     if (response.status === 200 || response.status === 201) {
                         await db.offlineSales.delete(sale.id);
                         successCount++;
                     }
                 } catch (err) {
                     console.error(`Failed to sync bill created at ${sale.date}:`, err);
-                    // We don't delete here, so it stays in DB for the next sync attempt
                 }
             }
-
-            // 4. Update UI state after the loop
             const remaining = await db.offlineSales.count();
             setPendingSync(remaining);
-
             if (remaining === 0) {
                 toast.success(`Synced ${successCount} bills successfully!`, { id: 'sync' });
             } else {
@@ -86,32 +103,37 @@ const AdminDashboard = () => {
             }
         }
     };
+
     const addToBill = () => {
-        if (!selectedFood) return toast.error("Select an item first");
+        if (!selectedFood) return toast.error('Select an item first');
         const newItem = {
-            foodId: selectedFood._id,
-            name: selectedFood.name,
-            rate: selectedFood.price,
-            qty: parseFloat(qty),
-            amount: selectedFood.price * qty
+            foodId:      selectedFood._id,
+            nameEnglish: selectedFood.nameEnglish,
+            nameTamil:   selectedFood.nameTamil,
+            rate:        selectedFood.price,
+            qty:         parseFloat(qty),
+            amount:      selectedFood.price * parseFloat(qty)
         };
-        setBillItems([...billItems, newItem]);
-        setSelectedFood(null); setSearchCode(''); setQty(1);
+        setBillItems(prev => [...prev, newItem]);
+        setSelectedFood(null);
+        setSearchCode('');
+        setQty(1);
     };
 
     const handleSaveBill = async () => {
-        if (billItems.length === 0) return toast.error("Bill is empty");
+        if (billItems.length === 0) return toast.error('Bill is empty');
         const saleData = {
-            items: billItems,
+            items:       billItems,
             totalAmount: billItems.reduce((acc, i) => acc + i.amount, 0),
-            date: new Date(),
-            billNo: `OFF-${Date.now().toString().slice(-4)}`
+            date:        new Date(),
+            billNo:      `OFF-${Date.now().toString().slice(-4)}`
         };
         if (isOnline) {
             try {
                 const res = await axios.post(`${API_URL}/api/admin/sales/save`, saleData);
                 toast.success(`Bill #${res.data.billNo} Saved Online`);
-                printBill(res.data);
+                // Use local billItems (already normalized) for print, not server response
+                printBill({ ...res.data, items: billItems });
             } catch (err) {
                 saveOfflineFallback(saleData);
             }
@@ -125,65 +147,245 @@ const AdminDashboard = () => {
     const saveOfflineFallback = async (saleData) => {
         await db.offlineSales.add({ ...saleData, status: 'pending' });
         setPendingSync(prev => prev + 1);
-        toast.error("Saved Locally (Offline)");
+        toast.error('Saved Locally (Offline)');
         printBill(saleData);
     };
 
     const handleRebillSearch = async () => {
-        if (!searchBillNo) return toast.error("Enter a Bill Number");
+        if (!searchBillNo) return toast.error('Enter a Bill Number');
         try {
             const res = await axios.get(`${API_URL}/api/admin/sales/find?date=${searchDate}&billNo=${searchBillNo}`);
-            setBillItems(res.data.items);
+            // Enrich every item using the live foodsMap so Tamil names are always fresh
+            const enriched = res.data.items.map(item => normalizeItem(item, foodsMap));
+            setBillItems(enriched);
             setCurrentBillNo(res.data.billNo);
             toast.success(`Bill #${res.data.billNo} Retrieved`);
         } catch (err) {
-            toast.error("Bill not found online");
+            toast.error('Bill not found online');
         }
     };
 
+    // ── Print bill — waits for Noto Sans Tamil to load before printing ────────
     const printBill = (data) => {
-        const printWindow = window.open('', '_blank', 'width=400,height=600');
-        printWindow.document.write(`<html><style>body { font-family: 'Courier New', monospace; padding: 10px; font-size: 12px; }.center { text-align: center; }table { width: 100%; border-collapse: collapse; margin-top: 10px; }th { border-bottom: 1px dashed #000; text-align: left; }.total { font-size: 16px; font-weight: bold; border-top: 1px solid #000; padding-top: 5px; }</style><body><div class="center"><h2>YOUR RESTAURANT</h2><hr/></div><p>Bill: ${data.billNo} <br/> Date: ${new Date(data.date).toLocaleString()}</p><table><thead><tr><th>ITEM</th><th>QTY</th><th>AMT</th></tr></thead><tbody>${data.items.map(i => `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.amount.toFixed(2)}</td></tr>`).join('')}</tbody></table><div class="total center">TOTAL: ₹${data.totalAmount.toFixed(2)}</div><hr/><p class="center">THANK YOU!</p></body></html>`);
+        const printWindow = window.open('', '_blank', 'width=320,height=700');
+        const rows = data.items.map(i => {
+            const tamil   = i.nameTamil   || i.name || '';
+            const english = i.nameEnglish || i.name || '';
+            const showEng = english && english !== tamil;
+            return `
+            <tr>
+                <td class="item-cell">
+                    <span class="item-tamil">${tamil}</span>
+                    ${showEng ? `<span class="item-english">${english}</span>` : ''}
+                </td>
+                <td class="num">${i.qty}</td>
+                <td class="num">${Number(i.rate).toFixed(2)}</td>
+                <td class="num">${Number(i.amount).toFixed(2)}</td>
+            </tr>`;
+        }).join('');
+
+        printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Bill ${data.billNo}</title>
+  <link id="tamil-font" rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;700&display=swap" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      width: 300px;
+      padding: 12px;
+      color: #000;
+    }
+
+    /* ── Header ── */
+    .header { text-align: center; margin-bottom: 8px; }
+    .header h1 { font-size: 16px; font-weight: bold; letter-spacing: 2px; }
+    .header p  { font-size: 10px; color: #444; margin-top: 2px; }
+    .divider-dashed { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+    .divider-solid  { border: none; border-top: 1px solid  #000; margin: 6px 0; }
+
+    /* ── Bill meta ── */
+    .meta { font-size: 10px; margin-bottom: 4px; }
+    .meta span { display: block; }
+
+    /* ── Items table ── */
+    table { width: 100%; border-collapse: collapse; }
+    thead tr th {
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      padding: 3px 2px;
+      border-bottom: 1px dashed #000;
+    }
+    .th-item  { text-align: left;  width: 45%; }
+    .th-qty   { text-align: right; width: 10%; }
+    .th-rate  { text-align: right; width: 22%; }
+    .th-amt   { text-align: right; width: 23%; }
+
+    tbody tr td { padding: 4px 2px; vertical-align: top; }
+    .item-cell  { text-align: left; }
+    .item-tamil {
+      display: block;
+      font-family: 'Noto Sans Tamil', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .item-english {
+      display: block;
+      font-size: 9px;
+      color: #555;
+      text-transform: uppercase;
+      line-height: 1.3;
+    }
+    .num { text-align: right; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 1px dashed #000; }
+
+    /* ── Total ── */
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 6px 0 4px;
+    }
+    .total-label { font-size: 11px; font-weight: bold; }
+    .total-value { font-size: 16px; font-weight: bold; }
+
+    /* ── Footer ── */
+    .footer { text-align: center; font-size: 10px; margin-top: 8px; }
+    .footer .thanks {
+      font-family: 'Noto Sans Tamil', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    @media print {
+      body { width: 100%; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>YOUR RESTAURANT</h1>
+    <p>உங்கள் உணவகம்</p>
+  </div>
+
+  <hr class="divider-dashed" />
+
+  <div class="meta">
+    <span>Bill No : <strong>${data.billNo}</strong></span>
+    <span>Date     : ${new Date(data.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</span>
+    <span>Time     : ${new Date(data.date).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}</span>
+  </div>
+
+  <hr class="divider-dashed" />
+
+  <table>
+    <thead>
+      <tr>
+        <th class="th-item">Item</th>
+        <th class="th-qty">Qty</th>
+        <th class="th-rate">Rate</th>
+        <th class="th-amt">Amt</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+
+  <div class="total-row">
+    <span class="total-label">GRAND TOTAL</span>
+    <span class="total-value">&#8377;${Number(data.totalAmount).toFixed(2)}</span>
+  </div>
+
+  <hr class="divider-solid" />
+
+  <div class="footer">
+    <p class="thanks">நன்றி !!</p>
+    <p>Thank you, Visit Again!</p>
+  </div>
+
+</body>
+</html>`);
+
         printWindow.document.close();
-        printWindow.print();
-        printWindow.close();
+
+        // Wait for Noto Sans Tamil to load before printing
+        // so Tamil characters actually render in the printout
+        const fontLink = printWindow.document.getElementById('tamil-font');
+        if (fontLink) {
+            fontLink.onload = () => {
+                setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+            };
+            // Fallback: if font doesn't load in 3s, print anyway
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 3000);
+        } else {
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+        }
     };
 
     return (
         <div className="h-screen flex flex-col overflow-hidden bg-gray-200">
             <Topbar />
 
-            {/* Connectivity Ribbon - Fixed alignment with items-center */}
+            {/* Connectivity Ribbon */}
             <div className={`text-[10px] font-bold px-3 py-1 flex items-center justify-between text-white transition-colors duration-300 ${isOnline ? 'bg-green-600' : 'bg-red-600'}`}>
                 <div className="flex items-center gap-1.5">
                     {isOnline ? <HiCloudUpload size={14} /> : <HiCloudDownload size={14} />}
-                    <span className="leading-none">{isOnline ? "CONNECTED TO INTERNET" : "OFFLINE MODE - LOCAL SAVING ACTIVE"}</span>
+                    <span className="leading-none">{isOnline ? 'CONNECTED TO INTERNET' : 'OFFLINE MODE - LOCAL SAVING ACTIVE'}</span>
                 </div>
                 {pendingSync > 0 && <span className="animate-pulse">{pendingSync} BILLS WAITING TO SYNC</span>}
             </div>
 
             <div className="flex-1 flex gap-1 p-1 overflow-hidden">
+
+                {/* ── Left: food search + food list ───────────────────────── */}
                 <div className="w-[60%] flex flex-col gap-1 overflow-hidden">
+
+                    {/* Item entry bar */}
                     <div className="bg-white p-3 shadow-sm border-t-4 border-brand-primary">
                         <div className="grid grid-cols-12 gap-2 items-end">
                             <div className="col-span-2">
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Item Code</label>
-                                <input type="text" className="w-full border p-1.5 text-sm font-bold outline-none" value={searchCode} onChange={(e) => {
-                                    setSearchCode(e.target.value);
-                                    const found = allFoods.find(f => f.itemcode === parseInt(e.target.value));
-                                    if (found) setSelectedFood(found);
-                                }} />
+                                <input
+                                    type="text"
+                                    className="w-full border p-1.5 text-sm font-bold outline-none"
+                                    value={searchCode}
+                                    onChange={(e) => {
+                                        setSearchCode(e.target.value);
+                                        const found = allFoods.find(f => f.itemcode === parseInt(e.target.value));
+                                        if (found) setSelectedFood(found);
+                                    }}
+                                />
                             </div>
                             <div className="col-span-5">
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Food Name</label>
-                                <input type="text" readOnly className="w-full bg-gray-50 border p-1.5 text-sm font-bold uppercase" value={selectedFood?.name || ''} />
+                                <div className="w-full bg-gray-50 border p-1.5 min-h-[34px] flex flex-col justify-center">
+                                    {selectedFood ? (
+                                        <>
+                                            <span lang="ta" style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }} className="text-sm font-bold leading-tight">
+                                                {selectedFood.nameTamil}
+                                            </span>
+                                            <span className="text-[9px] text-gray-400 uppercase leading-tight">
+                                                {selectedFood.nameEnglish}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span className="text-sm text-gray-300 font-bold">—</span>
+                                    )}
+                                </div>
                             </div>
                             <div className="col-span-2">
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Qty</label>
                                 <input type="number" className="w-full border p-1.5 text-sm font-bold" value={qty} onChange={(e) => setQty(e.target.value)} />
                             </div>
                             <div className="col-span-3">
-                                {/* Add Item Button - Fixed alignment */}
                                 <button onClick={addToBill} className="w-full bg-brand-primary text-white py-2 text-[11px] font-black uppercase flex items-center justify-center gap-2 hover:bg-opacity-90 active:scale-95 transition-all">
                                     <HiPlus size={16} />
                                     <span className="leading-none">Add Item</span>
@@ -191,56 +393,101 @@ const AdminDashboard = () => {
                             </div>
                         </div>
                     </div>
+
+                    {/* Food catalogue */}
                     <div className="bg-white flex-1 overflow-hidden flex flex-col shadow-sm">
                         <div className="bg-gray-100 p-2 border-b text-[10px] font-black text-brand-primary uppercase grid grid-cols-12">
-                            <span className="col-span-2">Code</span><span className="col-span-8">Product Description</span><span className="col-span-2 text-right">Rate</span>
+                            <span className="col-span-2">Code</span>
+                            <span className="col-span-8">Product Description</span>
+                            <span className="col-span-2 text-right">Rate</span>
                         </div>
                         <div className="overflow-y-auto flex-1">
                             {allFoods.map((f) => (
-                                <div key={f._id} onClick={() => { setSelectedFood(f); setSearchCode(f.itemcode); }} className="grid grid-cols-12 text-[11px] font-bold p-2 cursor-pointer hover:bg-blue-600 hover:text-white uppercase transition-colors">
-                                    <span className="col-span-2">{f.itemcode}</span><span className="col-span-8">{f.name}</span><span className="col-span-2 text-right">{f.price.toFixed(2)}</span>
+                                <div key={f._id}
+                                    onClick={() => { setSelectedFood(f); setSearchCode(f.itemcode); }}
+                                    className="grid grid-cols-12 text-[11px] font-bold p-2 cursor-pointer hover:bg-blue-600 hover:text-white transition-colors">
+                                    <span className="col-span-2">{f.itemcode}</span>
+                                    <div className="col-span-8 flex flex-col justify-center">
+                                        <span lang="ta" style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }} className="leading-tight">
+                                            {f.nameTamil}
+                                        </span>
+                                        <span className="text-[9px] uppercase leading-tight opacity-60">
+                                            {f.nameEnglish}
+                                        </span>
+                                    </div>
+                                    <span className="col-span-2 text-right">{f.price.toFixed(2)}</span>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
 
+                {/* ── Right: bill panel ────────────────────────────────────── */}
                 <div className="w-[40%] bg-white border shadow-sm flex flex-col">
+
+                    {/* Rebill search */}
                     <div className="p-2 bg-gray-50 border-b flex justify-between items-center">
                         <div className="flex gap-1">
                             <input type="date" className="text-[10px] border p-1 outline-none" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} />
-                            <input type="number" className="w-16 text-[10px] border p-1 outline-none" value={searchBillNo} onChange={(e) => setSearchBillNo(e.target.value)} />
+                            <input type="number" className="w-16 text-[10px] border p-1 outline-none" placeholder="Bill #" value={searchBillNo} onChange={(e) => setSearchBillNo(e.target.value)} />
                             <button onClick={handleRebillSearch} className="bg-gray-800 text-white p-1.5 flex items-center justify-center active:bg-black">
                                 <HiSearch size={14} />
                             </button>
                         </div>
                         <div className="text-[10px] font-black text-red-600">BILL NO: {currentBillNo}</div>
                     </div>
+
+                    {/* Bill items */}
                     <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-left text-[11px]">
                             <thead className="bg-gray-200 sticky top-0 font-black uppercase">
-                                <tr><th className="p-2">Items</th><th className="p-2 text-right">Price</th><th className="p-2 text-center">Qty</th><th className="p-2 text-right">Total</th></tr>
+                                <tr>
+                                    <th className="p-2">Items</th>
+                                    <th className="p-2 text-right">Price</th>
+                                    <th className="p-2 text-center">Qty</th>
+                                    <th className="p-2 text-right">Total</th>
+                                </tr>
                             </thead>
                             <tbody className="divide-y font-bold">
                                 {billItems.map((item, idx) => (
-                                    <tr key={idx} className="hover:bg-gray-50"><td className="p-2 uppercase">{item.name}</td><td className="p-2 text-right">{item.rate.toFixed(2)}</td><td className="p-2 text-center">{item.qty}</td><td className="p-2 text-right">₹{item.amount.toFixed(2)}</td></tr>
+                                    <tr key={idx} className="hover:bg-gray-50">
+                                        <td className="p-2">
+                                            <span lang="ta" style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }} className="block leading-tight text-[12px]">
+                                                {item.nameTamil || item.nameEnglish || item.name || '—'}
+                                            </span>
+                                            {(item.nameEnglish || item.name) && (
+                                                <span className="text-[9px] text-gray-400 uppercase leading-tight block">
+                                                    {item.nameEnglish || item.name}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="p-2 text-right">{Number(item.rate).toFixed(2)}</td>
+                                        <td className="p-2 text-center">{item.qty}</td>
+                                        <td className="p-2 text-right">₹{Number(item.amount).toFixed(2)}</td>
+                                    </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Total + actions */}
                     <div className="p-3 bg-gray-100 border-t">
                         <div className="flex justify-between items-center mb-4">
                             <span className="text-[12px] font-black text-gray-600">GRAND TOTAL</span>
-                            <div className="bg-white border-2 border-brand-primary px-4 py-1 text-xl font-black text-brand-primary">₹{billItems.reduce((acc, i) => acc + i.amount, 0).toFixed(2)}</div>
+                            <div className="bg-white border-2 border-brand-primary px-4 py-1 text-xl font-black text-brand-primary">
+                                ₹{billItems.reduce((acc, i) => acc + i.amount, 0).toFixed(2)}
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                            {/* Clear Button - Fixed alignment */}
-                            <button onClick={() => { setBillItems([]); setCurrentBillNo('New'); }} className="bg-gray-700 text-white py-3 text-[10px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-gray-800 active:bg-black transition-all">
+                            <button
+                                onClick={() => { setBillItems([]); setCurrentBillNo('New'); }}
+                                className="bg-gray-700 text-white py-3 text-[10px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-gray-800 active:bg-black transition-all">
                                 <HiTrash size={14} />
                                 <span className="leading-none">Clear</span>
                             </button>
-                            {/* Save & Print Button - Fixed alignment */}
-                            <button onClick={handleSaveBill} className="bg-blue-700 text-white py-3 text-[10px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-blue-800 active:bg-blue-900 transition-all">
+                            <button
+                                onClick={handleSaveBill}
+                                className="bg-blue-700 text-white py-3 text-[10px] uppercase font-bold flex items-center justify-center gap-2 hover:bg-blue-800 active:bg-blue-900 transition-all">
                                 <HiSave size={14} />
                                 <span className="leading-none">F2 - Save & Print</span>
                             </button>
