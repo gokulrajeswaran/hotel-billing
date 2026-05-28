@@ -6,11 +6,9 @@ export const translatefood = async (req, res) => {
     return res.status(400).json({ message: 'Name is required' });
   }
   try {
-    // Google Translate unofficial endpoint — no API key required
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ta&dt=t&q=${encodeURIComponent(name.trim())}`;
     const response = await fetch(url);
     const data = await response.json();
-    // Response shape: [ [ ["translated", "original", ...], ... ], ... ]
     const tamil = data?.[0]?.map(chunk => chunk?.[0]).filter(Boolean).join('').trim();
     if (!tamil) throw new Error('Empty translation');
     res.status(200).json({ tamil });
@@ -24,6 +22,7 @@ export const getfoods = async (req, res) => {
     const foods = await Food.find()
       .populate('category', 'name')
       .populate('varieties', 'name')
+      .populate('varietyPrices.variety', 'name')
       .sort({ createdAt: -1 });
     res.status(200).json(foods);
   } catch (err) {
@@ -51,7 +50,10 @@ export const addfood = async (req, res) => {
 
 export const updatefood = async (req, res) => {
   try {
-    const updated = await Food.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updated = await Food.findByIdAndUpdate(req.params.id, req.body, { new: true })
+      .populate('category', 'name')
+      .populate('varieties', 'name')
+      .populate('varietyPrices.variety', 'name');
     res.status(200).json(updated);
   } catch (err) {
     res.status(400).json({ message: err.message });

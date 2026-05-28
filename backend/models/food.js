@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
 const foodSchema = new mongoose.Schema({
-  itemcode: { type: String, required: true, unique: true, trim: true }, // Manually assigned
+  itemcode: { type: String, required: true, unique: true, trim: true },
   nameEnglish: { type: String, required: true, trim: true },
-  nameTamil: { type: String, required: true, trim: true }, // Stored as UTF-8; Tamil Unicode U+0B80–U+0BFF
+  nameTamil: { type: String, required: true, trim: true },
   price: { type: Number, required: true },
   quantity: { type: String, required: true, lowercase: true },
   category: { 
@@ -14,6 +14,11 @@ const foodSchema = new mongoose.Schema({
   varieties: [{ 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'variety' 
+  }],
+  // Per-variety pricing: [{ varietyId, price }]
+  varietyPrices: [{
+    variety: { type: mongoose.Schema.Types.ObjectId, ref: 'variety' },
+    price: { type: Number, required: true }
   }]
 }, { timestamps: true });
 

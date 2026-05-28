@@ -6,6 +6,10 @@ const saleSchema = new mongoose.Schema({
   items: [{
     foodId: { type: mongoose.Schema.Types.ObjectId, ref: 'food' },
     name: String,
+    nameEnglish: String,
+    nameTamil: String,
+    varietyId: { type: mongoose.Schema.Types.ObjectId, ref: 'variety', default: null },
+    varietyName: { type: String, default: null },
     rate: Number,
     qty: Number,
     amount: Number
@@ -14,7 +18,6 @@ const saleSchema = new mongoose.Schema({
   paymentType: { type: String, default: 'cash' }
 }, { timestamps: true });
 
-// Index for quick searching by date and bill number
 saleSchema.index({ date: 1, billNo: 1 });
 
 export default mongoose.model('sale', saleSchema);
