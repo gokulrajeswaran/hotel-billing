@@ -7,6 +7,7 @@ import categoryRoutes from './routes/categoryroutes.js';
 import varietyRoutes from './routes/varietyroutes.js';
 import foodRoutes from './routes/foodroutes.js';
 import salesRoutes from './routes/salesroutes.js';
+import reportRoutes from './routes/reportroutes.js';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use('/api/admin/category', categoryRoutes);
 app.use('/api/admin/variety', varietyRoutes);
 app.use('/api/admin/food', foodRoutes);
 app.use('/api/admin/sales', salesRoutes);
+app.use('/api/admin/reports', reportRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

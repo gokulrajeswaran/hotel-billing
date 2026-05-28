@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { HiSearch, HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
-import Topbar from './components/topbar';
-import { API_URL } from '../../components/api';
-import { confirmDelete, showSuccess } from '../../components/alert';
+import Topbar from '../components/topbar';
+import { API_URL } from '../../../components/api';
+import { confirmDelete, showSuccess } from '../../../components/alert';
 
 const ManageVariety = () => {
     const [varieties, setVarieties] = useState([]);

@@ -33,11 +33,19 @@ export const getfoods = async (req, res) => {
 
 export const addfood = async (req, res) => {
   try {
+    const { itemcode } = req.body;
+    if (!itemcode || String(itemcode).trim() === '')
+      return res.status(400).json({ message: 'Item code is required' });
+
+    const existing = await Food.findOne({ itemcode: String(itemcode).trim() });
+    if (existing)
+      return res.status(409).json({ message: `Item code "${itemcode}" is already in use` });
+
     const newFood = new Food(req.body);
     await newFood.save();
     res.status(201).json(newFood);
   } catch (err) {
-    res.status(400).json({ message: "Error adding food item" });
+    res.status(400).json({ message: 'Error adding food item' });
   }
 };
 

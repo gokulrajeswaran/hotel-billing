@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { HiHome, HiChevronDown, HiOutlineLogout } from 'react-icons/hi'; // Importing icons
-import { MdOutlineFastfood, MdCategory, MdLayers } from 'react-icons/md'; // Icons for dropdown
+import { MdOutlineFastfood, MdCategory, MdLayers, MdDateRange, MdFastfood, MdReceipt, MdBook } from 'react-icons/md'; // Icons for dropdown
 import { confirmDelete } from '../../../../frontend/components/alert';
 
 const Topbar = () => {
   const [isMasterOpen, setIsMasterOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -69,7 +70,36 @@ const Topbar = () => {
               </div>
 
               <button className="hover:text-gray-300 transition-colors cursor-pointer uppercase">Transactions</button>
-              <button className="hover:text-gray-300 transition-colors cursor-pointer uppercase">Reports</button>
+
+              {/* Reports Dropdown */}
+              <div
+                className="relative h-16 flex items-center"
+                onMouseEnter={() => setIsReportOpen(true)}
+                onMouseLeave={() => setIsReportOpen(false)}
+              >
+                <button className="flex items-center gap-2 cursor-pointer hover:text-gray-300 transition-colors uppercase">
+                  Reports
+                  <HiChevronDown className={`w-4 h-4 transition-transform duration-300 ${isReportOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isReportOpen && (
+                  <div className="absolute top-16 left-0 w-64 bg-brand-white text-brand-primary shadow-2xl rounded-sm py-2 z-50 border-t-2 border-brand-primary animate-in fade-in slide-in-from-top-1 duration-150">
+                    <Link to="/admin/reports/datewise-collection" className="flex items-center gap-3 px-5 py-3 hover:bg-gray-100 transition-colors font-bold text-[10px]">
+                      <MdDateRange className="text-lg" /> Date Wise Collection Summary
+                    </Link>
+                    <Link to="/admin/reports/foodwise-collection" className="flex items-center gap-3 px-5 py-3 hover:bg-gray-100 transition-colors font-bold text-[10px]">
+                      <MdFastfood className="text-lg" /> Food Wise Collection Summary
+                    </Link>
+                    <Link to="/admin/reports/billwise-collection" className="flex items-center gap-3 px-5 py-3 hover:bg-gray-100 transition-colors font-bold text-[10px]">
+                      <MdReceipt className="text-lg" /> Bill Wise Collection Summary
+                    </Link>
+                    <Link to="/admin/reports/daybook" className="flex items-center gap-3 px-5 py-3 hover:bg-gray-100 transition-colors font-bold text-[10px]">
+                      <MdBook className="text-lg" /> Day Book
+                    </Link>
+                  </div>
+                )}
+              </div>
+
               <button className="hover:text-gray-300 transition-colors cursor-pointer uppercase">System</button>
             </div>
           </div>

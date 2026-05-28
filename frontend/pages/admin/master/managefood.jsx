@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { HiPencil, HiTrash } from 'react-icons/hi';
-import Topbar from './components/topbar';
-import { API_URL } from '../../components/api';
-import { confirmDelete, showSuccess } from '../../components/alert';
+import Topbar from '../components/topbar';
+import { API_URL } from '../../../components/api';
+import { confirmDelete, showSuccess } from '../../../components/alert';
 
 // Noto Sans Tamil — loaded once when this module is imported
 if (typeof document !== 'undefined' && !document.getElementById('noto-tamil-font')) {
@@ -16,7 +16,7 @@ if (typeof document !== 'undefined' && !document.getElementById('noto-tamil-font
 }
 
 const EMPTY_FORM = {
-  nameEnglish: '', nameTamil: '', price: '', quantity: '', category: '', varieties: []
+  itemcode: '', nameEnglish: '', nameTamil: '', price: '', quantity: '', category: '', varieties: []
 };
 
 // ── Auto-translate via your own backend (avoids CORS) ────────────────────────
@@ -33,11 +33,11 @@ async function translateToTamil(englishName) {
 }
 
 export default function ManageFood() {
-  const [foods, setFoods]           = useState([]);
+  const [foods, setFoods] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [varieties, setVarieties]   = useState([]);
-  const [formData, setFormData]     = useState(EMPTY_FORM);
-  const [editId, setEditId]         = useState(null);
+  const [varieties, setVarieties] = useState([]);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [editId, setEditId] = useState(null);
   const [translating, setTranslating] = useState(false);
 
   // Debounce ref — cancel pending translation if user keeps typing
@@ -107,7 +107,7 @@ export default function ManageFood() {
       }
       resetForm();
       fetchData();
-    } catch (err) { toast.error('Operation failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || 'Operation failed'); }
   };
 
   const resetForm = () => {
@@ -131,12 +131,13 @@ export default function ManageFood() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setEditId(food._id);
     setFormData({
+      itemcode: food.itemcode || '',
       nameEnglish: food.nameEnglish || '',
-      nameTamil:   food.nameTamil   || '',
-      price:       food.price,
-      quantity:    food.quantity,
-      category:    food.category?._id || '',
-      varieties:   food.varieties.map(v => v._id || v)
+      nameTamil: food.nameTamil || '',
+      price: food.price,
+      quantity: food.quantity,
+      category: food.category?._id || '',
+      varieties: food.varieties.map(v => v._id || v)
     });
     setTranslating(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -156,7 +157,26 @@ export default function ManageFood() {
         <form onSubmit={handleSubmit} className="bg-brand-white p-8 rounded-sm shadow-sm border border-gray-100 mb-10">
 
           {/* Row 1: Food Name (single field) + Price + Quantity */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+
+            {/* Item Code — manual entry */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">
+                Item Code <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="e.g. 101"
+                value={formData.itemcode}
+                onChange={(e) => setFormData({ ...formData, itemcode: e.target.value })}
+                required
+                disabled={!!editId}
+              />
+              {editId && (
+                <p className="text-[9px] text-gray-300 font-bold uppercase mt-1">Code cannot be changed</p>
+              )}
+            </div>
 
             {/* Food Name — with auto-translate preview */}
             <div>
@@ -218,11 +238,11 @@ export default function ManageFood() {
 
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Price</label>
-              <input type="number" className={inputCls} value={formData.price} onChange={(e) => setFormData({...formData, price: e.target.value})} required />
+              <input type="number" className={inputCls} value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Quantity</label>
-              <input type="text" className={inputCls} value={formData.quantity} onChange={(e) => setFormData({...formData, quantity: e.target.value})} required />
+              <input type="text" className={inputCls} value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required />
             </div>
           </div>
 
@@ -230,7 +250,7 @@ export default function ManageFood() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Category</label>
-              <select className={`${inputCls} cursor-pointer`} value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} required>
+              <select className={`${inputCls} cursor-pointer`} value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} required>
                 <option value="">Select Category</option>
                 {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
               </select>

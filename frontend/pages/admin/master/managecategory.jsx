@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import Topbar from './components/topbar';
-import { API_URL } from '../../components/api';
-import { confirmDelete, showSuccess } from '../../components/alert';
+import Topbar from '../components/topbar';
+import { API_URL } from '../../../components/api';
+import { confirmDelete, showSuccess } from '../../../components/alert';
 
 const ManageCategory = () => {
     const [categories, setCategories] = useState([]);

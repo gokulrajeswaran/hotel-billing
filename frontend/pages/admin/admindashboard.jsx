@@ -28,7 +28,7 @@ const normalizeItem = (item, foodsLookup = {}) => {
     return {
         ...item,
         nameEnglish: item.nameEnglish || liveFood?.nameEnglish || item.name || '',
-        nameTamil:   item.nameTamil   || liveFood?.nameTamil   || item.name || '',
+        nameTamil: item.nameTamil || liveFood?.nameTamil || item.name || '',
     };
 };
 
@@ -43,19 +43,21 @@ const AdminDashboard = () => {
     const [currentBillNo, setCurrentBillNo] = useState('New');
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [pendingSync, setPendingSync] = useState(0);
+    const [searchName, setSearchName] = useState('');
+    const [showDropdown, setShowDropdown] = useState(false);
 
     // Keep a live id→food map for enriching retrieved bills
     const [foodsMap, setFoodsMap] = useState({});
 
     useEffect(() => {
         fetchFoods();
-        const handleOnline  = () => { setIsOnline(true); syncOfflineData(); };
+        const handleOnline = () => { setIsOnline(true); syncOfflineData(); };
         const handleOffline = () => { setIsOnline(false); };
-        window.addEventListener('online',  handleOnline);
+        window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
         syncOfflineData();
         return () => {
-            window.removeEventListener('online',  handleOnline);
+            window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
@@ -107,26 +109,28 @@ const AdminDashboard = () => {
     const addToBill = () => {
         if (!selectedFood) return toast.error('Select an item first');
         const newItem = {
-            foodId:      selectedFood._id,
+            foodId: selectedFood._id,
             nameEnglish: selectedFood.nameEnglish,
-            nameTamil:   selectedFood.nameTamil,
-            rate:        selectedFood.price,
-            qty:         parseFloat(qty),
-            amount:      selectedFood.price * parseFloat(qty)
+            nameTamil: selectedFood.nameTamil,
+            rate: selectedFood.price,
+            qty: parseFloat(qty),
+            amount: selectedFood.price * parseFloat(qty)
         };
         setBillItems(prev => [...prev, newItem]);
         setSelectedFood(null);
         setSearchCode('');
+        setSearchName('');
+        setShowDropdown(false);
         setQty(1);
     };
 
     const handleSaveBill = async () => {
         if (billItems.length === 0) return toast.error('Bill is empty');
         const saleData = {
-            items:       billItems,
+            items: billItems,
             totalAmount: billItems.reduce((acc, i) => acc + i.amount, 0),
-            date:        new Date(),
-            billNo:      `OFF-${Date.now().toString().slice(-4)}`
+            date: new Date(),
+            billNo: `OFF-${Date.now().toString().slice(-4)}`
         };
         if (isOnline) {
             try {
@@ -142,6 +146,8 @@ const AdminDashboard = () => {
         }
         setBillItems([]);
         setCurrentBillNo('New');
+        setSearchName('');
+        setShowDropdown(false);
     };
 
     const saveOfflineFallback = async (saleData) => {
@@ -169,7 +175,7 @@ const AdminDashboard = () => {
     const printBill = (data) => {
         const printWindow = window.open('', '_blank', 'width=320,height=700');
         const rows = data.items.map(i => {
-            const tamil   = i.nameTamil   || i.name || '';
+            const tamil = i.nameTamil || i.name || '';
             const english = i.nameEnglish || i.name || '';
             const showEng = english && english !== tamil;
             return `
@@ -279,8 +285,8 @@ const AdminDashboard = () => {
 
   <div class="meta">
     <span>Bill No : <strong>${data.billNo}</strong></span>
-    <span>Date     : ${new Date(data.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</span>
-    <span>Time     : ${new Date(data.date).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}</span>
+    <span>Date     : ${new Date(data.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+    <span>Time     : ${new Date(data.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
   </div>
 
   <hr class="divider-dashed" />
@@ -355,31 +361,76 @@ const AdminDashboard = () => {
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Item Code</label>
                                 <input
                                     type="text"
-                                    className="w-full border p-1.5 text-sm font-bold outline-none"
+                                    className="w-full border p-1.5 text-sm font-bold outline-none focus:border-brand-primary"
                                     value={searchCode}
                                     onChange={(e) => {
-                                        setSearchCode(e.target.value);
-                                        const found = allFoods.find(f => f.itemcode === parseInt(e.target.value));
-                                        if (found) setSelectedFood(found);
+                                        const val = e.target.value;
+                                        setSearchCode(val);
+                                        const found = allFoods.find(f => String(f.itemcode) === val.trim());
+                                        if (found) {
+                                            setSelectedFood(found);
+                                            setSearchName(found.nameEnglish);
+                                            setShowDropdown(false);
+                                        } else {
+                                            setSelectedFood(null);
+                                            setSearchName('');
+                                        }
                                     }}
                                 />
                             </div>
-                            <div className="col-span-5">
+                            <div className="col-span-5 relative">
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Food Name</label>
-                                <div className="w-full bg-gray-50 border p-1.5 min-h-[34px] flex flex-col justify-center">
-                                    {selectedFood ? (
-                                        <>
-                                            <span lang="ta" style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }} className="text-sm font-bold leading-tight">
-                                                {selectedFood.nameTamil}
-                                            </span>
-                                            <span className="text-[9px] text-gray-400 uppercase leading-tight">
-                                                {selectedFood.nameEnglish}
-                                            </span>
-                                        </>
+                                <input
+                                    type="text"
+                                    className="w-full border p-1.5 text-sm font-bold outline-none focus:border-brand-primary"
+                                    placeholder="Search food name…"
+                                    value={searchName}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSearchName(val);
+                                        setSelectedFood(null);
+                                        setSearchCode('');
+                                        setShowDropdown(val.trim().length > 0);
+                                    }}
+                                    onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                                    onFocus={() => searchName.trim().length > 0 && setShowDropdown(true)}
+                                />
+                                {showDropdown && (() => {
+                                    const q = searchName.trim().toLowerCase();
+                                    const matches = allFoods.filter(f =>
+                                        f.nameEnglish?.toLowerCase().includes(q) ||
+                                        f.nameTamil?.includes(searchName.trim())
+                                    );
+                                    return matches.length > 0 ? (
+                                        <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                                            {matches.map(f => (
+                                                <div
+                                                    key={f._id}
+                                                    onMouseDown={() => {
+                                                        setSelectedFood(f);
+                                                        setSearchCode(String(f.itemcode));
+                                                        setSearchName(f.nameEnglish);
+                                                        setShowDropdown(false);
+                                                    }}
+                                                    className="px-3 py-2 cursor-pointer hover:bg-blue-600 hover:text-white flex items-center gap-3 text-[11px] font-bold"
+                                                >
+                                                    <span className="text-gray-400 w-8 shrink-0">{f.itemcode}</span>
+                                                    <div className="flex flex-col">
+                                                        <span lang="ta" style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }} className="leading-tight">
+                                                            {f.nameTamil}
+                                                        </span>
+                                                        <span className="text-[9px] uppercase leading-tight opacity-60">{f.nameEnglish}</span>
+                                                    </div>
+                                                    <span className="ml-auto">₹{f.price.toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     ) : (
-                                        <span className="text-sm text-gray-300 font-bold">—</span>
-                                    )}
-                                </div>
+                                        <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 shadow-lg z-50 px-3 py-2 text-[11px] text-gray-400 font-bold">
+                                            No items found
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div className="col-span-2">
                                 <label className="text-[9px] font-bold text-gray-500 uppercase">Qty</label>
@@ -404,7 +455,7 @@ const AdminDashboard = () => {
                         <div className="overflow-y-auto flex-1">
                             {allFoods.map((f) => (
                                 <div key={f._id}
-                                    onClick={() => { setSelectedFood(f); setSearchCode(f.itemcode); }}
+                                    onClick={() => { setSelectedFood(f); setSearchCode(String(f.itemcode)); setSearchName(f.nameEnglish); setShowDropdown(false); }}
                                     className="grid grid-cols-12 text-[11px] font-bold p-2 cursor-pointer hover:bg-blue-600 hover:text-white transition-colors">
                                     <span className="col-span-2">{f.itemcode}</span>
                                     <div className="col-span-8 flex flex-col justify-center">
